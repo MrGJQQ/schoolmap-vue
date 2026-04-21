@@ -21,12 +21,6 @@
           <el-form-item label="名称">
             <el-input v-model="searchForm.buildName" placeholder="请输入名称" clearable />
           </el-form-item>
-          <el-form-item label="类型" style="width: 180px" ;>
-            <el-select v-model="searchForm.type" placeholder="请选择添加类型" clearable>
-              <el-option label="建筑物" value="0" />
-              <el-option label="出口/入口" value="1" />
-            </el-select>
-          </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="searchForm.about" placeholder="请输入描述关键词" clearable />
           </el-form-item>
@@ -42,15 +36,9 @@
         @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="50" />
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="buildName" label="建筑名称" width="100" />
-        <el-table-column prop="type" label="类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="getTypeType(row.type)" disable-transitions>
-              {{ getTypeLabel(row.type) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="gis" label="坐标" width="100">
+        <el-table-column prop="buildName" label="建筑名称" width="150" />
+        <el-table-column prop="buildNo" label="编号" width="120" />
+        <el-table-column prop="gis" label="坐标" width="150">
           <template #default="{ row }">
             <span>{{ row.gis }}</span>
           </template>
@@ -88,12 +76,6 @@
         <el-form-item label="名称" prop="buildName">
           <el-input v-model="buildingForm.buildName" placeholder="请输入名称" />
         </el-form-item>
-        <el-form-item label="类型" prop="type">
-          <el-select v-model="buildingForm.type" placeholder="请选择类型" style="width: 100%">
-            <el-option label="建筑物" value="0" />
-            <el-option label="出口/入口" value="1" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="坐标" prop="gis">
           <div class="coordinate-inputs">
             <el-input v-model.number="buildingForm.location.lng" placeholder="经度"
@@ -106,9 +88,6 @@
         </el-form-item>
         <el-form-item label="描述" prop="about">
           <el-input v-model="buildingForm.about" type="textarea" :rows="3" placeholder="请输入建筑物描述" />
-        </el-form-item>
-        <el-form-item label="包含ID" prop="containId">
-          <el-input-number v-model="buildingForm.containId" :min="0" placeholder="请输入包含ID" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -152,7 +131,6 @@ export default {
     // 搜索表单
     const searchForm = reactive({
       buildName: '',
-      type: '',
       about: ''
     })
 
@@ -167,15 +145,13 @@ export default {
       id: null,
       buildNo: '',
       buildName: '',
-      type: '',
       gis: '',
       location: {
         lng: null,
         lat: null
       },
       about: '',
-      containId: 0,
-      uploader: ''
+      uploader: '' // 当前登录用户的名称
     })
 
     // 多选相关
@@ -191,9 +167,6 @@ export default {
         { required: true, message: '请输入名称', trigger: 'blur' },
         { min: 2, max: 50, message: '名称长度应在2-50之间', trigger: 'blur' }
       ],
-      type: [
-        { required: true, message: '请选择类型', trigger: 'change' }
-      ],
       gis: [
         { validator: validateLocation, trigger: 'blur' }
       ]
@@ -207,6 +180,118 @@ export default {
       }
     }
 
+    // 初始化地图选择器
+    const initMap = () => {
+      // 加载高德地图API
+      if (window.AMap) {
+        createMapInstance()
+      } else {
+        loadAMapAPI().then(() => {
+          createMapInstance()
+        }).catch(err => {
+          console.error('地图API加载失败:', err)
+          ElMessage.error('地图API加载失败')
+        })
+      }
+    }
+
+    // 加载高德地图API
+    const loadAMapAPI = () => {
+      return new Promise((resolve, reject) => {
+        if (window.AMap) {
+          resolve(window.AMap)
+          return
+        }
+
+        window.initAMap = () => {
+          resolve(window.AMap)
+        }
+
+        const script = document.createElement('script')
+        script.type = 'text/javascript'
+        script.src = 'https://webapi.amap.com/maps?v=2.0&key=6d94c07bbc4f8a312b29ea7dc4f887a6&callback=initAMap'
+        script.onerror = () => {
+          reject(new Error('高德地图API加载失败'))
+        }
+        document.head.appendChild(script)
+      })
+    }
+
+    // 创建地图实例
+    let selectedMarker = null
+    let mapInstance = null
+    
+    const createMapInstance = () => {
+      // 确保容器存在
+      const mapContainer = document.getElementById('map-selector')
+      if (!mapContainer) {
+        console.error('地图容器不存在')
+        return
+      }
+
+      // 创建地图实例
+      mapInstance = new window.AMap.Map(mapContainer, {
+        center: [113.823275, 34.799331], // 默认中心点
+        zoom: 15,
+        mapStyle: 'amap://styles/normal'
+      })
+
+      // 监听地图点击事件
+      mapInstance.on('click', (e) => {
+        // 移除之前的标记
+        if (selectedMarker) {
+          mapInstance.remove(selectedMarker)
+        }
+
+        // 设置新的标记
+        selectedMarker = new window.AMap.Marker({
+          position: [e.lnglat.lng, e.lnglat.lat],
+          title: '选中的坐标',
+          label: {
+            content: '选中的坐标',
+            offset: new window.AMap.Pixel(0, 0)
+          }
+        })
+
+        mapInstance.add(selectedMarker)
+
+        // 更新表单中的坐标值
+        buildingForm.location.lng = e.lnglat.lng
+        buildingForm.location.lat = e.lnglat.lat
+        
+        console.log('选中的坐标:', e.lnglat.lng, e.lnglat.lat)
+      })
+
+      // 如果已有坐标，添加标记
+      if (buildingForm.location.lng && buildingForm.location.lat) {
+        selectedMarker = new window.AMap.Marker({
+          position: [buildingForm.location.lng, buildingForm.location.lat],
+          title: '当前坐标',
+          label: {
+            content: '当前坐标',
+            offset: new window.AMap.Pixel(0, 0)
+          }
+        })
+        mapInstance.add(selectedMarker)
+        mapInstance.setCenter([buildingForm.location.lng, buildingForm.location.lat])
+      }
+    }
+
+    // 获取当前登录用户信息
+    const getCurrentUser = () => {
+      const userStr = localStorage.getItem('user')
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr)
+          return user.name || user.username || '未知用户'
+        } catch (e) {
+          console.error('解析用户信息失败:', e)
+          return '未知用户'
+        }
+      }
+      return '匿名用户'
+    }
+
     // 获取建筑物列表
     const getBuildingList = async () => {
       loading.value = true
@@ -215,7 +300,6 @@ export default {
           currentPage: currentPage.value,
           pageSize: pageSize.value,
           buildName: searchForm.buildName,
-          type: searchForm.type,
           about: searchForm.about
         }
 
@@ -257,7 +341,6 @@ export default {
     // 重置搜索
     const resetSearch = () => {
       searchForm.buildName = ''
-      searchForm.type = ''
       searchForm.about = ''
       currentPage.value = 1
       getBuildingList()
@@ -280,23 +363,6 @@ export default {
       multipleSelection.value = val
     }
 
-    // 类型相关
-    const getTypeLabel = (type) => {
-      switch (type) {
-        case '0': return '建筑物'
-        case '1': return '出口/入口'
-        default: return '未知'
-      }
-    }
-
-    const getTypeType = (type) => {
-      switch (type) {
-        case '0': return 'primary'
-        case '1': return 'success'
-        default: return 'info'
-      }
-    }
-
     // 打开添加建筑物对话框
     const openAddDialog = () => {
       isEdit.value = false
@@ -306,15 +372,13 @@ export default {
         id: null,
         buildNo: '',
         buildName: '',
-        type: '',
         gis: '',
         location: {
           lng: null,
           lat: null
         },
         about: '',
-        containId: 0,
-        uploader: ''
+        uploader: getCurrentUser() // 设置当前登录用户
       })
       dialogVisible.value = true
     }
@@ -342,12 +406,7 @@ export default {
       dialogVisible.value = true
     }
 
-    // 查看地图
-    const viewOnMap = (row) => {
-      console.log('查看建筑物在地图上:', row)
-    }
-
-    // 删除建筑物
+    // 删除建筑物 - 统一调用删除接口
     const deleteBuilding = async (id) => {
       try {
         await ElMessageBox.confirm(
@@ -359,7 +418,12 @@ export default {
             type: 'warning'
           }
         )
-        const response = await request.delete(`/building/${id}`)
+
+        // 使用统一的删除接口
+        const response = await request.delete('/build/delete', {
+          data: [id]  // 传递单个ID作为数组
+        })
+
         ElMessage.success('删除成功!')
         // 重新获取建筑物列表
         getBuildingList()
@@ -371,7 +435,7 @@ export default {
       }
     }
 
-    // 批量删除
+    // 批量删除 - 统一调用删除接口
     const batchDelete = async () => {
       if (multipleSelection.value.length === 0) {
         ElMessage.warning('请至少选择一个建筑物')
@@ -390,7 +454,11 @@ export default {
         )
 
         const ids = multipleSelection.value.map(item => item.id)
-        const response = await request.post('/building/deleteBatch', ids)
+
+        // 使用统一的删除接口
+        const response = await request.delete('/build/delete', {
+          data: ids  // 传递多个ID组成的数组
+        })
 
         ElMessage.success(`成功删除 ${multipleSelection.value.length} 个建筑物!`)
         multipleSelection.value = []
@@ -410,11 +478,6 @@ export default {
       setTimeout(() => {
         initMap()
       }, 200)
-    }
-
-    // 初始化地图选择器
-    const initMapSelector = () => {
-      console.log('初始化地图选择器')
     }
 
     // 确认坐标
@@ -444,15 +507,25 @@ export default {
     const confirmDialog = async () => {
       try {
         // 合并经纬度为gis字段
-        buildingForm.gis = `${buildingForm.location.lng},${buildingForm.location.lat}`
+        const gis = `${buildingForm.location.lng},${buildingForm.location.lat}`
+
+        // 创建一个新的对象，只包含需要提交到后端的字段，排除时间戳字段
+        const submitData = {
+          id: buildingForm.id,
+          buildNo: buildingForm.buildNo,
+          buildName: buildingForm.buildName,
+          gis: gis,
+          about: buildingForm.about,
+          uploader: buildingForm.uploader // 包含当前登录用户
+        }
 
         if (isEdit.value) {
-          // 编辑建筑物
-          const response = await request.post('/updateBuilding', buildingForm)
+          // 编辑建筑物 - 保持原来的上传者
+          const response = await request.post('/build/update', submitData)
           ElMessage.success('建筑物信息更新成功!')
         } else {
-          // 添加建筑物
-          const response = await request.post('/addBuilding', buildingForm)
+          // 添加建筑物 - 使用当前登录用户
+          const response = await request.post('/build/add', submitData)
           ElMessage.success('建筑物添加成功!')
         }
 
@@ -461,7 +534,7 @@ export default {
         getBuildingList()
       } catch (error) {
         console.error('操作失败:', error)
-        ElMessage.error('操作失败')
+        ElMessage.error('操作失败: ' + (error.response?.data?.message || error.message || ''))
       }
     }
 
@@ -489,11 +562,8 @@ export default {
       handleSizeChange,
       handleCurrentChange,
       handleSelectionChange,
-      getTypeLabel,
-      getTypeType,
       openAddDialog,
       editBuilding,
-      viewOnMap,
       deleteBuilding,
       batchDelete,
       selectOnMap,
