@@ -70,8 +70,9 @@
     <!-- 添加/编辑建筑物对话框 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="600px" :before-close="handleClose">
       <el-form :model="buildingForm" :rules="buildingRules" ref="buildingFormRef" label-width="100px">
-        <el-form-item label="编号" prop="buildNo">
-          <el-input v-model="buildingForm.buildNo" placeholder="请输入编号" />
+        <!-- 编号字段仅在编辑时显示，且为只读 -->
+        <el-form-item v-if="isEdit" label="编号" prop="buildNo">
+          <el-input v-model="buildingForm.buildNo" placeholder="请输入编号" readonly disabled />
         </el-form-item>
         <el-form-item label="名称" prop="buildName">
           <el-input v-model="buildingForm.buildName" placeholder="请输入名称" />
@@ -159,10 +160,6 @@ export default {
 
     // 表单验证规则
     const buildingRules = {
-      buildNo: [
-        { required: true, message: '请输入编号', trigger: 'blur' },
-        { min: 2, max: 20, message: '编号长度应在2-20之间', trigger: 'blur' }
-      ],
       buildName: [
         { required: true, message: '请输入名称', trigger: 'blur' },
         { min: 2, max: 50, message: '名称长度应在2-50之间', trigger: 'blur' }
@@ -220,7 +217,7 @@ export default {
     // 创建地图实例
     let selectedMarker = null
     let mapInstance = null
-    
+
     const createMapInstance = () => {
       // 确保容器存在
       const mapContainer = document.getElementById('map-selector')
@@ -258,7 +255,7 @@ export default {
         // 更新表单中的坐标值
         buildingForm.location.lng = e.lnglat.lng
         buildingForm.location.lat = e.lnglat.lat
-        
+
         console.log('选中的坐标:', e.lnglat.lng, e.lnglat.lat)
       })
 
@@ -507,12 +504,21 @@ export default {
     const confirmDialog = async () => {
       try {
         // 合并经纬度为gis字段
+        if (!buildingForm.buildName || buildingForm.buildName.length < 2 || buildingForm.buildName.length > 50) {
+          ElMessage.error('请正确填写名称（2-50个字符）')
+          return
+        }
+
+        // 验证坐标
+        if (!buildingForm.location.lng || !buildingForm.location.lat) {
+          ElMessage.error('请选择坐标')
+          return
+        }
         const gis = `${buildingForm.location.lng},${buildingForm.location.lat}`
 
         // 创建一个新的对象，只包含需要提交到后端的字段，排除时间戳字段
         const submitData = {
           id: buildingForm.id,
-          buildNo: buildingForm.buildNo,
           buildName: buildingForm.buildName,
           gis: gis,
           about: buildingForm.about,

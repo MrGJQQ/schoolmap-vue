@@ -130,8 +130,9 @@
         ref="formRef"
         label-width="100px"
       >
-        <el-form-item label="场地编号" prop="spaceNo">
-          <el-input v-model="form.spaceNo" placeholder="请输入场地编号" />
+        <!-- 场地编号字段仅在编辑时显示，且为只读 -->
+        <el-form-item v-if="isEdit" label="场地编号" prop="spaceNo">
+          <el-input v-model="form.spaceNo" placeholder="场地编号" readonly disabled />
         </el-form-item>
         <el-form-item label="场地名称" prop="spaceName">
           <el-input v-model="form.spaceName" placeholder="请输入场地名称" />
@@ -215,11 +216,8 @@ const form = reactive({
   uploader: '' // 当前登录用户
 })
 
-// 表单验证规则
+// 表单验证规则 - 移除场地编号的必填验证
 const formRules = {
-  spaceNo: [
-    { required: true, message: '请输入场地编号', trigger: 'blur' }
-  ],
   spaceName: [
     { required: true, message: '请输入场地名称', trigger: 'blur' }
   ],
@@ -469,12 +467,16 @@ const submitForm = async () => {
     // 创建一个新的对象，只包含需要提交到后端的字段
     const submitData = {
       id: form.id,
-      spaceNo: form.spaceNo,
       spaceName: form.spaceName,
       type: form.type,
       buildId: form.buildId,
       about: form.about,
       uploader: form.uploader
+    }
+
+    // 只有当编号不为空时才添加到提交数据中（编辑模式）
+    if (isEdit.value && form.spaceNo && form.spaceNo.trim() !== '') {
+      submitData.spaceNo = form.spaceNo;
     }
 
     if (isEdit.value) {

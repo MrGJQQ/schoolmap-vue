@@ -90,16 +90,13 @@
     <!-- 添加/编辑道路对话框 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="600px" :before-close="handleClose">
       <div class="auto-calculate-toggle">
-        <el-switch
-          v-model="autoCalculateLength"
-          active-text="自动计算长度"
-          inactive-text="手动输入长度"
-        />
+        <el-switch v-model="autoCalculateLength" active-text="自动计算长度" inactive-text="手动输入长度" />
       </div>
-      
+
       <el-form :model="roadForm" :rules="roadRules" ref="roadFormRef" label-width="100px">
-        <el-form-item label="道路编号" prop="roadNo">
-          <el-input v-model="roadForm.roadNo" placeholder="请输入道路编号" />
+        <!-- 道路编号字段仅在编辑时显示，且为只读 -->
+        <el-form-item v-if="isEdit" label="道路编号" prop="roadNo">
+          <el-input v-model="roadForm.roadNo" placeholder="道路编号" readonly disabled />
         </el-form-item>
         <el-form-item label="道路名称" prop="roadName">
           <el-input v-model="roadForm.roadName" placeholder="请输入道路名称" />
@@ -112,45 +109,22 @@
           </el-select>
         </el-form-item>
         <el-form-item label="起始节点" prop="beginNode">
-          <el-select 
-            v-model="roadForm.beginNode" 
-            placeholder="请选择起始节点" 
-            style="width: 100%"
-            @change="handleBeginNodeChange"
-          >
-            <el-option 
-              v-for="node in nodeList" 
-              :key="node.nodeNo" 
-              :label="`${node.nodeName} (${node.nodeNo})`" 
-              :value="node.nodeNo"
-            />
+          <el-select v-model="roadForm.beginNode" placeholder="请选择起始节点" style="width: 100%"
+            @change="handleBeginNodeChange">
+            <el-option v-for="node in nodeList" :key="node.nodeNo" :label="`${node.nodeName} (${node.nodeNo})`"
+              :value="node.nodeNo" />
           </el-select>
         </el-form-item>
         <el-form-item label="结束节点" prop="endNode">
-          <el-select 
-            v-model="roadForm.endNode" 
-            placeholder="请选择结束节点" 
-            style="width: 100%"
-            @change="handleEndNodeChange"
-          >
-            <el-option 
-              v-for="node in nodeList" 
-              :key="node.nodeNo" 
-              :label="`${node.nodeName} (${node.nodeNo})`" 
-              :value="node.nodeNo"
-            />
+          <el-select v-model="roadForm.endNode" placeholder="请选择结束节点" style="width: 100%" @change="handleEndNodeChange">
+            <el-option v-for="node in nodeList" :key="node.nodeNo" :label="`${node.nodeName} (${node.nodeNo})`"
+              :value="node.nodeNo" />
           </el-select>
         </el-form-item>
         <el-form-item label="长度(m)" prop="length">
-          <el-input-number 
-            v-model="roadForm.length" 
-            :min="0" 
-            :precision="2"
-            :step="0.1"
-            :placeholder="autoCalculateLength ? '将根据节点坐标自动计算' : '请输入道路长度'"
-            style="width: 100%" 
-            :disabled="autoCalculateLength"
-          />
+          <el-input-number v-model="roadForm.length" :min="0" :precision="2" :step="0.1"
+            :placeholder="autoCalculateLength ? '将根据节点坐标自动计算' : '请输入道路长度'" style="width: 100%"
+            :disabled="autoCalculateLength" />
           <div class="auto-calculate-info" v-if="roadForm.beginNode && roadForm.endNode && autoCalculateLength">
             <el-text type="success">已根据节点坐标自动计算长度: {{ roadForm.length }} 米</el-text>
           </div>
@@ -242,12 +216,8 @@ export default {
     // 多选相关
     const multipleSelection = ref([])
 
-    // 表单验证规则
+    // 表单验证规则 - 移除道路编号的必填验证
     const roadRules = {
-      roadNo: [
-        { required: true, message: '请输入道路编号', trigger: 'blur' },
-        { min: 2, max: 20, message: '编号长度应在2-20之间', trigger: 'blur' }
-      ],
       roadName: [
         { required: true, message: '请输入道路名称', trigger: 'blur' },
         { min: 2, max: 50, message: '名称长度应在2-50之间', trigger: 'blur' }
@@ -285,21 +255,21 @@ export default {
     // 解析GIS坐标字符串
     const parseGisCoordinates = (gisString) => {
       if (!gisString) return null;
-      
+
       const coords = gisString.split(',');
       if (coords.length !== 2) {
         console.warn('无效的GIS坐标格式:', gisString);
         return null;
       }
-      
+
       const longitude = parseFloat(coords[0].trim());
       const latitude = parseFloat(coords[1].trim());
-      
+
       if (isNaN(longitude) || isNaN(latitude)) {
         console.warn('无效的坐标值:', gisString);
         return null;
       }
-      
+
       return { longitude, latitude };
     };
 
@@ -337,9 +307,9 @@ export default {
           endCoords.latitude,
           endCoords.longitude
         )
-        
+
         console.log('计算得到的距离:', distance, '米')
-        
+
         return Math.round(distance * 100) / 100 // 保留两位小数
       } catch (error) {
         console.error('计算距离时出错:', error)
@@ -351,17 +321,17 @@ export default {
     const haversineDistance = (lat1, lon1, lat2, lon2) => {
       // 将角度转换为弧度
       const degToRad = (deg) => deg * Math.PI / 180
-      
+
       const R = 6371e3; // 地球半径（米）
       const φ1 = degToRad(lat1);
       const φ2 = degToRad(lat2);
       const Δφ = degToRad(lat2 - lat1);
       const Δλ = degToRad(lon2 - lon1);
 
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
       return R * c; // 返回米
     }
@@ -372,10 +342,10 @@ export default {
         // 更新选中的节点信息（用于调试）
         selectedStartNode.value = nodeList.value.find(node => node.nodeNo === roadForm.beginNode)
         selectedEndNode.value = nodeList.value.find(node => node.nodeNo === roadForm.endNode)
-        
+
         const distance = await calculateDistance(roadForm.beginNode, roadForm.endNode)
         calculatedDistance.value = distance
-        
+
         if (distance > 0) {
           roadForm.length = distance
         }
@@ -418,7 +388,7 @@ export default {
       if (!Array.isArray(nodeList.value)) {
         return nodeNo
       }
-      
+
       const node = nodeList.value.find(n => n.nodeNo === nodeNo)
       return node ? `${node.nodeName} (${node.nodeNo})` : nodeNo
     }
@@ -448,7 +418,7 @@ export default {
             createdAt: road.createdAt ? new Date(road.createdAt).toLocaleString() : '',
             updatedAt: road.updatedAt ? new Date(road.updatedAt).toLocaleString() : ''
           }))
-          
+
           total.value = responseData.totalNums || 0
         } else {
           console.error('后端返回错误:', response)
@@ -646,7 +616,6 @@ export default {
         }
 
         const submitData = {
-          roadNo: roadForm.roadNo,
           roadName: roadForm.roadName,
           roadType: roadForm.roadType,
           beginNode: roadForm.beginNode, // 发送节点编号
@@ -654,6 +623,11 @@ export default {
           length: submitLength, // 使用计算后的长度值
           about: roadForm.about,
           uploader: roadForm.uploader
+        }
+
+        // 只有当编号不为空时才添加到提交数据中（编辑模式）
+        if (isEdit.value && roadForm.roadNo && roadForm.roadNo.trim() !== '') {
+          submitData.roadNo = roadForm.roadNo;
         }
 
         // 如果是编辑模式，添加id字段

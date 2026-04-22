@@ -88,36 +88,24 @@
     <!-- 添加/编辑路口对话框 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="600px" :before-close="handleClose">
       <el-form :model="nodeForm" :rules="nodeRules" ref="nodeFormRef" label-width="100px">
-        <el-form-item label="路口编号" prop="nodeNo">
-          <el-input v-model="nodeForm.nodeNo" placeholder="请输入路口编号" />
+        <!-- 路口编号字段仅在编辑时显示，且为只读 -->
+        <el-form-item v-if="isEdit" label="路口编号" prop="nodeNo">
+          <el-input v-model="nodeForm.nodeNo" placeholder="路口编号" readonly disabled />
         </el-form-item>
         <el-form-item label="路口名称" prop="nodeName">
           <el-input v-model="nodeForm.nodeName" placeholder="请输入路口名称" />
         </el-form-item>
         <el-form-item label="路口类型" prop="nodeType">
-          <el-select 
-            v-model="nodeForm.nodeType" 
-            placeholder="请选择类型" 
-            style="width: 100%"
-            @change="handleNodeTypeChange"
-          >
+          <el-select v-model="nodeForm.nodeType" placeholder="请选择类型" style="width: 100%" @change="handleNodeTypeChange">
             <el-option label="道路路口" value="0" />
             <el-option label="出口/入口" value="1" />
           </el-select>
         </el-form-item>
         <!-- 仅当类型不为"道路路口"(0)时显示所属字段 -->
-        <el-form-item 
-          v-if="nodeForm.nodeType !== '0' && nodeForm.nodeType !== 0" 
-          label="所属" 
-          prop="belong"
-        >
+        <el-form-item v-if="nodeForm.nodeType !== '0' && nodeForm.nodeType !== 0" label="所属" prop="belong">
           <el-select v-model="nodeForm.belong" placeholder="请选择所属建筑" style="width: 100%" clearable>
-            <el-option 
-              v-for="building in buildingList" 
-              :key="building.id" 
-              :label="building.buildName" 
-              :value="building.id"
-            />
+            <el-option v-for="building in buildingList" :key="building.id" :label="building.buildName"
+              :value="building.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="坐标" prop="gis">
@@ -177,7 +165,7 @@ export default {
     // 搜索表单
     const searchForm = reactive({
       nodeName: '',
-      nodeNo: '',  
+      nodeNo: '',
       nodeType: ''
     })
 
@@ -190,9 +178,9 @@ export default {
     // 路口表单
     const nodeForm = reactive({
       id: null,
-      nodeNo: '',  
+      nodeNo: '',
       nodeName: '',
-      nodeType: '',  
+      nodeType: '',
       belong: null, // 默认为null
       gis: '',
       location: {
@@ -206,17 +194,13 @@ export default {
     // 多选相关
     const multipleSelection = ref([])
 
-    // 表单验证规则
+    // 表单验证规则 - 移除路口编号的必填验证
     const nodeRules = {
-      nodeNo: [  
-        { required: true, message: '请输入路口编号', trigger: 'blur' },
-        { min: 2, max: 20, message: '编号长度应在2-20之间', trigger: 'blur' }
-      ],
       nodeName: [
         { required: true, message: '请输入路口名称', trigger: 'blur' },
         { min: 2, max: 50, message: '名称长度应在2-50之间', trigger: 'blur' }
       ],
-      nodeType: [  
+      nodeType: [
         { required: true, message: '请选择类型', trigger: 'change' }
       ],
       gis: [
@@ -321,7 +305,7 @@ export default {
     // 创建地图实例
     let selectedMarker = null
     let mapInstance = null
-    
+
     const createMapInstance = () => {
       // 确保容器存在
       const mapContainer = document.getElementById('map-selector')
@@ -359,7 +343,7 @@ export default {
         // 更新表单中的坐标值
         nodeForm.location.lng = e.lnglat.lng
         nodeForm.location.lat = e.lnglat.lat
-        
+
         console.log('选中的坐标:', e.lnglat.lng, e.lnglat.lat)
       })
 
@@ -386,8 +370,8 @@ export default {
           currentPage: currentPage.value,
           pageSize: pageSize.value,
           nodeName: searchForm.nodeName,
-          nodeNo: searchForm.nodeNo,  
-          nodeType: searchForm.nodeType  
+          nodeNo: searchForm.nodeNo,
+          nodeType: searchForm.nodeType
         }
 
         const response = await request.get('/road/node', { params })
@@ -427,8 +411,8 @@ export default {
     // 重置搜索
     const resetSearch = () => {
       searchForm.nodeName = ''
-      searchForm.nodeNo = ''  
-      searchForm.nodeType = ''  
+      searchForm.nodeNo = ''
+      searchForm.nodeType = ''
       currentPage.value = 1
       getNodeList()
     }
@@ -451,17 +435,17 @@ export default {
     }
 
     // 类型相关
-    const getNodeTypeLabel = (nodeType) => {  
+    const getNodeTypeLabel = (nodeType) => {
       switch (nodeType) {
-        case 0: return '道路路口'  
+        case 0: return '道路路口'
         case 1: return '出口/入口'
         default: return '未知'
       }
     }
 
-    const getNodeTypeType = (nodeType) => {  
+    const getNodeTypeType = (nodeType) => {
       switch (nodeType) {
-        case 0: return 'primary'  
+        case 0: return 'primary'
         case 1: return 'success'
         default: return 'info'
       }
@@ -474,9 +458,9 @@ export default {
       // 重置表单，belong默认为null
       Object.assign(nodeForm, {
         id: null,
-        nodeNo: '',  
+        nodeNo: '',
         nodeName: '',
-        nodeType: '',  
+        nodeType: '',
         belong: null, // 默认为null
         gis: '',
         location: {
@@ -634,13 +618,17 @@ export default {
 
         // 创建一个新的对象，只包含需要提交到后端的字段，排除时间戳字段
         const submitData = {
-          nodeNo: nodeForm.nodeNo,  
           nodeName: nodeForm.nodeName,
           nodeType: parseInt(nodeForm.nodeType), // 确保nodeType是数字类型
           belong: nodeForm.belong, // 可能为null
           gis: gis,
           about: nodeForm.about,
           uploader: nodeForm.uploader
+        }
+
+        // 只有当编号不为空时才添加到提交数据中（编辑模式）
+        if (isEdit.value && nodeForm.nodeNo && nodeForm.nodeNo.trim() !== '') {
+          submitData.nodeNo = nodeForm.nodeNo;
         }
 
         // 如果是编辑模式，添加id字段
@@ -661,7 +649,7 @@ export default {
       } catch (error) {
         console.error('操作失败:', error)
         console.error('错误详情:', error.response)
-        
+
         // 根据不同错误类型显示不同的消息
         if (error.response) {
           const errorMessage = error.response.data?.message || error.response.data?.error || '服务器返回错误'
@@ -701,8 +689,8 @@ export default {
       handleSizeChange,
       handleCurrentChange,
       handleSelectionChange,
-      getNodeTypeLabel,  
-      getNodeTypeType,   
+      getNodeTypeLabel,
+      getNodeTypeType,
       getBuildingName, // 新增
       handleNodeTypeChange, // 新增
       openAddDialog,
