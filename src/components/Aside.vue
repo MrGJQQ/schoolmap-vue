@@ -63,20 +63,20 @@
         <span>用户管理</span>
       </el-menu-item>
 
-      <el-menu-item index="/admin/activity">
+      <el-menu-item index="/admin/workcontents">
         <el-icon><Operation /></el-icon>
-        <span>活动管理</span>
+        <span>工作管理</span>
       </el-menu-item>
 
-      <el-menu-item index="/admin/ranking">
+      <!-- <el-menu-item index="/admin/ranking">
         <el-icon><Medal /></el-icon>
         <span>校园推荐</span>
-      </el-menu-item>
+      </el-menu-item> -->
       
-      <el-menu-item index="/admin/system">
+      <!-- <el-menu-item index="/admin/system">
         <el-icon><Setting /></el-icon>
         <span>系统设置</span>
-      </el-menu-item>
+      </el-menu-item> -->
     </el-menu>
   </div>
 </template>

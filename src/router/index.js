@@ -24,6 +24,11 @@ const routes = [
     component: () => import('@/views/front/CampusRecommend.vue'),
   },
   {
+    path: '/knowledgegraph',
+    name: 'KnowledgeGraph',
+    component: () => import('@/views/front/KonwledgeGraph.vue'),
+  },
+  {
     path: '/admin',
     name: 'Admin',
     component: () => import('@/views/manage/Admin.vue'),
@@ -60,19 +65,9 @@ const routes = [
         component: () => import('@/views/manage/User.vue')
       },
       {
-        path: 'activity',
-        name: 'ActivityManagement',
-        component: () => import('@/views/manage/Activity.vue')
-      },
-      {
-        path: 'ranking',
-        name: 'RankingManagement',
-        component: () => import('@/views/manage/Ranking.vue')
-      },
-      {
-        path: 'system',
-        name: 'SystemSettings',
-        component: () => import('@/views/manage/SystemSettings.vue')
+        path: 'workcontents',
+        name: 'workcontentsManagement',
+        component: () => import('@/views/manage/WorksManage.vue')
       }
     ]
   }

@@ -25,37 +25,164 @@
       </div>
     </div>
 
-    <!-- 导航规划面板 -->
-    <div class="navigation-panel" v-if="navigationMode">
-      <div class="nav-controls">
-        <h3>路径规划</h3>
-        <div class="nav-inputs">
-          <el-select v-model="startPoint" placeholder="起点" filterable>
-            <el-option v-for="item in navigationOptions" :key="item.nodeNo" :label="item.nodeName" :value="item.nodeNo">
-            </el-option>
-          </el-select>
-          <el-select v-model="endPoint" placeholder="终点" filterable>
-            <el-option v-for="item in navigationOptions" :key="item.nodeNo" :label="item.nodeName" :value="item.nodeNo">
-            </el-option>
-          </el-select>
+    <!-- 左下角路径规划面板 -->
+    <div class="bottom-left-navigation-panel" :class="{ 'collapsed': isPanelCollapsed }">
+      <div class="panel-header" @click="togglePanel">
+        <div class="header-title">
+          <i class="el-icon-location"></i>
+          <span>路径规划</span>
         </div>
+        <i :class="isPanelCollapsed ? 'el-icon-arrow-up' : 'el-icon-arrow-down'" class="collapse-icon"></i>
+      </div>
+
+      <div class="panel-content" v-show="!isPanelCollapsed">
+        <!-- 起点终点选择 -->
+        <div class="nav-inputs">
+          <div class="input-item">
+            <div class="input-label">
+              <i class="el-icon-circle-plus" style="color: #67C23A;"></i>
+              <span>起点</span>
+            </div>
+            <el-select v-model="startPoint" placeholder="请选择起点" filterable remote clearable :remote-method="searchNodes"
+              :loading="nodeSearchLoading" size="small">
+              <el-option v-for="item in filteredNodes" :key="item.nodeNo" :label="`${item.nodeName}`"
+                :value="item.nodeNo">
+                <span style="float: left">{{ item.nodeName }}</span>
+                <span style="float: right; color: #8492a6; font-size: 12px">{{ item.nodeNo }}</span>
+              </el-option>
+            </el-select>
+          </div>
+          <div class="input-item">
+            <div class="input-label">
+              <i class="el-icon-circle-check" style="color: #F56C6C;"></i>
+              <span>终点</span>
+            </div>
+            <el-select v-model="endPoint" placeholder="请选择终点" filterable remote clearable :remote-method="searchNodes"
+              :loading="nodeSearchLoading" size="small">
+              <el-option v-for="item in filteredNodes" :key="item.nodeNo" :label="`${item.nodeName}`"
+                :value="item.nodeNo">
+                <span style="float: left">{{ item.nodeName }}</span>
+                <span style="float: right; color: #8492a6; font-size: 12px">{{ item.nodeNo }}</span>
+              </el-option>
+            </el-select>
+          </div>
+          <div class="swap-btn" @click="swapStartEnd" v-if="startPoint && endPoint">
+            <i class="el-icon-sort"></i> 交换
+          </div>
+        </div>
+
+        <!-- 出行方式 -->
         <div class="transport-options">
-          <el-radio-group v-model="transportType">
-            <el-radio :label="2">步行</el-radio>
-            <el-radio :label="1">骑行</el-radio>
-            <el-radio :label="0">驾车</el-radio>
+          <div class="transport-label">出行方式：</div>
+          <el-radio-group v-model="transportType" size="small">
+            <el-radio :label="2">
+              <i class="el-icon-walk"></i> 步行
+            </el-radio>
+            <el-radio :label="1">
+              <i class="el-icon-bicycle"></i> 骑行
+            </el-radio>
+            <el-radio :label="0">
+              <i class="el-icon-van"></i> 驾车
+            </el-radio>
           </el-radio-group>
         </div>
+
+        <!-- 操作按钮 -->
         <div class="nav-actions">
-          <el-button @click="cancelNavigation">取消</el-button>
-          <el-button type="primary" @click="getPathPlan" :disabled="!startPoint || !endPoint">开始规划</el-button>
+          <el-button size="small" @click="clearPath">清空</el-button>
+          <el-button type="primary" size="small" @click="getPathPlan" :disabled="!startPoint || !endPoint"
+            :loading="pathPlanning">
+            <i class="el-icon-location-information"></i> 开始规划
+          </el-button>
+        </div>
+
+        <!-- 路径规划结果列表 -->
+        <div class="path-results" v-if="pathPlanData && pathPlanData.paths && pathPlanData.paths.length > 0">
+          <div class="results-header">
+            <span>规划结果 ({{ pathPlanData.paths.length }}条)</span>
+            <el-button type="text" size="small" @click="clearAllPaths" :disabled="!hasPaths">
+              清除所有路径
+            </el-button>
+          </div>
+          <div class="results-list">
+            <div v-for="(path, idx) in pathPlanData.paths" :key="path.pathIndex || idx" class="path-result-item"
+              :class="{ 'active': activePathIndex === String(idx) }" @click="selectPath(idx)">
+              <div class="path-header">
+                <div class="path-index">{{ idx + 1 }}</div>
+                <div class="path-info">
+                  <div class="path-desc">{{ path.description || `路径${idx + 1}` }}</div>
+                  <div class="path-meta">
+                    <span><i class="el-icon-ruler"></i> {{ formatDistance(path.totalDistance) }}</span>
+                    <span><i class="el-icon-map-location"></i> {{ getUniqueNodeCount(path.pathNodes) }}个节点</span>
+                  </div>
+                </div>
+                <div class="path-actions">
+                  <el-tag :type="getPathTagType(idx)" size="mini">{{ getPathTagText(idx) }}</el-tag>
+                </div>
+              </div>
+              <div class="path-detail-preview" v-if="activePathIndex === String(idx)">
+                <div class="preview-nodes">
+                  <div class="preview-node" v-for="(node, nodeIdx) in getUniqueNodes(path.pathNodes).slice(0, 4)"
+                    :key="nodeIdx">
+                    <span class="preview-node-name">{{ node.nodeName }}</span>
+                    <i v-if="nodeIdx < getUniqueNodes(path.pathNodes).length - 1 && nodeIdx < 3"
+                      class="el-icon-arrow-right"></i>
+                  </div>
+                  <span v-if="getUniqueNodes(path.pathNodes).length > 4" class="preview-more">
+                    ... 共{{ getUniqueNodes(path.pathNodes).length }}个
+                  </span>
+                </div>
+                <div class="preview-actions">
+                  <el-button type="text" size="mini" @click.stop="showFullPathDetail(path)">
+                    <i class="el-icon-document"></i> 查看详情
+                  </el-button>
+                  <el-button type="text" size="mini" @click.stop="simulateNavigation(path)">
+                    <i class="el-icon-video-play"></i> 模拟导航
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 当前选中路径的简要信息 -->
+        <div class="current-path-info" v-if="currentSelectedPath && !pathPlanning">
+          <div class="info-header">
+            <span>当前路径</span>
+          </div>
+          <div class="info-content">
+            <div class="info-item">
+              <span class="label">距离:</span>
+              <span class="value">{{ formatDistance(currentSelectedPath.totalDistance) }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">道路:</span>
+              <span class="value">{{ currentSelectedPath.pathEdges?.length || 0 }}段</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 加载状态 -->
+        <div class="loading-state" v-if="pathPlanning">
+          <el-skeleton :rows="3" animated />
+          <div class="loading-text">正在规划路径...</div>
+        </div>
+
+        <!-- 错误状态 -->
+        <div class="error-state" v-if="planError">
+          <el-empty description="路径规划失败，请检查起点和终点" :image-size="60">
+            <el-button type="primary" size="small" @click="getPathPlan">重试</el-button>
+          </el-empty>
         </div>
       </div>
     </div>
 
-    <!-- 功能按钮组 -->
+    <!-- 右侧功能按钮组 -->
     <div class="right-function-area">
       <div class="function-buttons">
+        <el-button type="info" @click="goToKnowledgeGraph">
+          知识图谱
+        </el-button>
         <el-button type="warning" @click="toggleNavigationMode">
           {{ navigationMode ? '退出导航' : '路径规划' }}
         </el-button>
@@ -86,7 +213,6 @@
               </el-dropdown-item>
               <el-dropdown-item command="login" v-else>请先登录</el-dropdown-item>
 
-              <!-- 管理后台入口 -->
               <el-dropdown-item command="admin" v-if="isLoggedIn && Number(userInfo.power) < 2"
                 divided>进入管理后台</el-dropdown-item>
 
@@ -96,61 +222,6 @@
         </el-dropdown>
       </div>
     </div>
-
-    <!-- 路径规划结果对话框 -->
-    <el-dialog v-model="pathPlanDialogVisible" title="路径规划结果" width="700px" class="path-plan-dialog" @close="closePathPlanDialog">
-      <div v-if="pathPlanData && pathPlanData.paths">
-        <el-tabs v-model="activePathIndex" @tab-click="handleTabClick">
-          <el-tab-pane v-for="path in pathPlanData.paths" :key="path.pathIndex" :label="path.description">
-            <div class="path-detail">
-              <div class="path-summary">
-                <el-tag type="success">总距离: {{ path.totalDistance }}{{ path.distanceUnit || '米' }}</el-tag>
-              </div>
-              
-              <!-- 节点列表 -->
-              <div class="path-section">
-                <h4>途经节点</h4>
-                <div class="path-nodes">
-                  <div v-for="(node, idx) in path.pathNodes" :key="idx" class="path-node-item">
-                    <div class="node-marker">{{ idx + 1 }}</div>
-                    <div class="node-info">
-                      <div class="node-name">{{ node.nodeName }}</div>
-                      <div class="node-no">{{ node.nodeNo }}</div>
-                    </div>
-                    <el-icon v-if="idx < path.pathNodes.length - 1" class="arrow-icon">
-                      <ArrowRight />
-                    </el-icon>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 道路列表 -->
-              <div class="path-section">
-                <h4>途经道路</h4>
-                <div class="path-edges">
-                  <div v-for="edge in path.pathEdges" :key="edge.id" class="path-edge-item">
-                    <div class="edge-name">{{ edge.roadName }}</div>
-                    <div class="edge-info">
-                      <span>长度: {{ edge.length }}米</span>
-                      <el-tag :type="edge.roadType === 0 ? 'danger' : (edge.roadType === 1 ? 'primary' : 'success')" size="small">
-                        {{ edge.roadType === 0 ? '机动车道' : (edge.roadType === 1 ? '自行车道' : '人行道') }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="path-actions">
-                <el-button type="primary" @click="drawPathOnMap(path)">在地图上显示此路径</el-button>
-              </div>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-      <template #footer>
-        <el-button @click="closePathPlanDialog">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 建筑物详情对话框 -->
     <el-dialog v-model="buildingDialogVisible" :title="selectedBuilding ? selectedBuilding.buildName : '建筑物详情'"
@@ -216,6 +287,16 @@
             <el-empty description="暂无楼内工作场所" :image-size="80" />
           </div>
         </div>
+
+        <!-- 添加作为起点/终点按钮 -->
+        <div class="building-actions" v-if="navigationMode">
+          <el-button type="primary" size="small" @click="setAsStartPoint(selectedBuilding)">
+            设为起点
+          </el-button>
+          <el-button type="success" size="small" @click="setAsEndPoint(selectedBuilding)">
+            设为终点
+          </el-button>
+        </div>
       </div>
       <template #footer>
         <div class="dialog-footer">
@@ -259,13 +340,70 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 路径详情弹窗 -->
+    <el-dialog v-model="pathDetailDialogVisible" title="路径详细信息" width="700px" class="path-detail-dialog">
+      <div v-if="detailPath">
+        <div class="detail-overview">
+          <div class="overview-item">
+            <span class="label">路径描述</span>
+            <span class="value">{{ detailPath.description }}</span>
+          </div>
+          <div class="overview-item">
+            <span class="label">总距离</span>
+            <span class="value">{{ formatDistance(detailPath.totalDistance) }}</span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>📍 途经节点列表（去重后）</h4>
+          <div class="node-list">
+            <div v-for="(node, idx) in getUniqueNodes(detailPath.pathNodes)" :key="idx" class="node-item">
+              <span class="node-order">{{ idx + 1 }}</span>
+              <span class="node-name">{{ node.nodeName }}</span>
+              <span class="node-no">{{ node.nodeNo }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h4>🛣️ 道路详情</h4>
+          <div class="road-list">
+            <div v-for="(edge, idx) in detailPath.pathEdges" :key="idx" class="road-item">
+              <div class="road-name">{{ edge.roadName || `道路${idx + 1}` }}</div>
+              <div class="road-info">
+                <span>长度: {{ parseFloat(edge.length).toFixed(2) }}米</span>
+                <el-tag :type="getRoadTypeTag(edge.roadType)" size="small">
+                  {{ getRoadTypeText(edge.roadType) }}
+                </el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="pathDetailDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="drawDetailPathOnMap">在地图上显示</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 模拟导航控制栏 -->
+    <div v-if="isSimulating" class="simulation-bar">
+      <div class="simulation-info">
+        <span>导航模拟中</span>
+        <span>当前节点: {{ currentNodeIndex + 1 }} / {{ simulateNodes.length }}</span>
+      </div>
+      <div class="simulation-controls">
+        <el-button size="small" @click="stopSimulation" type="danger">停止导航</el-button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, OfficeBuilding, ArrowRight } from '@element-plus/icons-vue'
 import request from '@/utils/request'
 
@@ -287,6 +425,8 @@ export default {
     const originalBuildingsData = ref([])
     const originalSpacesData = ref([])
     const allNodes = ref([])
+    const filteredNodes = ref([])
+    const nodeSearchLoading = ref(false)
 
     // 对话框相关状态
     const buildingDialogVisible = ref(false)
@@ -302,11 +442,60 @@ export default {
     const transportType = ref(2)
     const navigationOptions = ref([])
     const currentPathPolylines = ref([])
+    const currentStartMarker = ref(null)
+    const currentEndMarker = ref(null)
+    const pathPlanning = ref(false)
+    const planError = ref(false)
+    const isPanelCollapsed = ref(false)
 
     // 路径规划结果
     const pathPlanDialogVisible = ref(false)
     const pathPlanData = ref(null)
     const activePathIndex = ref('0')
+    const currentSelectedPath = ref(null)
+    const pathDetailDialogVisible = ref(false)
+    const detailPath = ref(null)
+
+    // 模拟导航相关
+    const isSimulating = ref(false)
+    const simulateNodes = ref([])
+    const currentNodeIndex = ref(0)
+    let simulationInterval = null
+    let currentMarker = null
+
+    // 计算属性：是否有路径
+    const hasPaths = computed(() => {
+      return currentPathPolylines.value && currentPathPolylines.value.length > 0
+    })
+
+    // 辅助函数：格式化距离
+    const formatDistance = (distance) => {
+      if (!distance && distance !== 0) return '0米'
+      const num = parseFloat(distance)
+      if (isNaN(num)) return '0米'
+      if (num >= 1000) {
+        return (num / 1000).toFixed(2) + '公里'
+      }
+      return num.toFixed(2) + '米'
+    }
+
+    // 辅助函数：去重节点（按节点编号）
+    const getUniqueNodes = (nodes) => {
+      if (!nodes || !Array.isArray(nodes)) return []
+      const seen = new Set()
+      return nodes.filter(node => {
+        if (seen.has(node.nodeNo)) {
+          return false
+        }
+        seen.add(node.nodeNo)
+        return true
+      })
+    }
+
+    // 获取去重后的节点数量
+    const getUniqueNodeCount = (nodes) => {
+      return getUniqueNodes(nodes).length
+    }
 
     const checkLoginStatus = () => {
       const userStr = localStorage.getItem('user')
@@ -363,13 +552,33 @@ export default {
       return typeMap[type] || 'info'
     }
 
+    const getRoadTypeTag = (type) => {
+      const typeMap = { 0: 'danger', 1: 'primary', 2: 'warning' }
+      return typeMap[type] || 'info'
+    }
+
+    const getRoadTypeText = (type) => {
+      const typeMap = { 0: '机动车道', 1: '自行车道', 2: '人行道' }
+      return typeMap[type] || '未知道路'
+    }
+
+    const getPathTagType = (idx) => {
+      const types = ['', 'success', 'warning', 'info']
+      return types[idx % types.length] || 'primary'
+    }
+
+    const getPathTagText = (idx) => {
+      const texts = ['推荐', '备选1', '备选2', '备选3']
+      return texts[idx] || `路径${idx + 1}`
+    }
+
     const handleCommand = (command) => {
       if (command === 'login') {
         router.push('/user/login')
       } else if (command === 'logout') {
         logout()
       } else if (command === 'profile') {
-        console.log('查看用户资料')
+        router.push('/user/profile')
       } else if (command === 'admin') {
         enterAdminPanel()
       }
@@ -384,17 +593,90 @@ export default {
     }
 
     const logout = () => {
-      localStorage.removeItem('user')
-      localStorage.removeItem('token')
-      isLoggedIn.value = false
-      userInfo.value = {}
-      ElMessage.success('已退出登录')
+      ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        localStorage.removeItem('user')
+        localStorage.removeItem('token')
+        isLoggedIn.value = false
+        userInfo.value = {}
+        ElMessage.success('已退出登录')
+      }).catch(() => { })
     }
 
     const storageHandler = (e) => {
       if (e.key === 'user') {
         checkLoginStatus()
       }
+    }
+
+    const togglePanel = () => {
+      isPanelCollapsed.value = !isPanelCollapsed.value
+    }
+
+    // 跳转到知识图谱
+    const goToKnowledgeGraph = () => {
+      router.push('/knowledgegraph')
+    }
+
+    // 交换起点终点
+    const swapStartEnd = () => {
+      const temp = startPoint.value
+      startPoint.value = endPoint.value
+      endPoint.value = temp
+      if (startPoint.value && endPoint.value) {
+        getPathPlan()
+      }
+    }
+
+    // 清除所有路径
+    const clearAllPaths = () => {
+      clearPathPolylines()
+      clearStartEndMarkers()
+      pathPlanData.value = null
+      currentSelectedPath.value = null
+      activePathIndex.value = '0'
+      ElMessage.success('已清除所有路径')
+    }
+
+    // 清空规划
+    const clearPath = () => {
+      startPoint.value = ''
+      endPoint.value = ''
+      clearAllPaths()
+    }
+
+    // 显示完整路径详情
+    const showFullPathDetail = (path) => {
+      detailPath.value = path
+      pathDetailDialogVisible.value = true
+    }
+
+    // 在地图上显示详情路径
+    const drawDetailPathOnMap = () => {
+      if (detailPath.value) {
+        drawPathOnMap(detailPath.value)
+        pathDetailDialogVisible.value = false
+      }
+    }
+
+    // 搜索节点（用于起点/终点选择）
+    const searchNodes = (query) => {
+      if (!query) {
+        filteredNodes.value = navigationOptions.value.slice(0, 20)
+        return
+      }
+      nodeSearchLoading.value = true
+      setTimeout(() => {
+        const lowerQuery = query.toLowerCase()
+        filteredNodes.value = navigationOptions.value.filter(node =>
+          node.nodeName.toLowerCase().includes(lowerQuery) ||
+          node.nodeNo.toLowerCase().includes(lowerQuery)
+        ).slice(0, 50)
+        nodeSearchLoading.value = false
+      }, 300)
     }
 
     const fetchBuildingWorkspaces = async (buildingId) => {
@@ -435,17 +717,49 @@ export default {
       workspaceDialogVisible.value = true
     }
 
+    // 将建筑物设为起点
+    const setAsStartPoint = (building) => {
+      const node = allNodes.value.find(n => n.nodeName === building.buildName || n.gis === building.gis)
+      if (node) {
+        startPoint.value = node.nodeNo
+        ElMessage.success(`已将 ${building.buildName} 设为起点`)
+        buildingDialogVisible.value = false
+        addStartMarker(building.gis)
+        if (endPoint.value) {
+          getPathPlan()
+        }
+      } else {
+        ElMessage.warning('该建筑物未关联到道路网络节点')
+      }
+    }
+
+    // 将建筑物设为终点
+    const setAsEndPoint = (building) => {
+      const node = allNodes.value.find(n => n.nodeName === building.buildName || n.gis === building.gis)
+      if (node) {
+        endPoint.value = node.nodeNo
+        ElMessage.success(`已将 ${building.buildName} 设为终点`)
+        buildingDialogVisible.value = false
+        addEndMarker(building.gis)
+        if (startPoint.value) {
+          getPathPlan()
+        }
+      } else {
+        ElMessage.warning('该建筑物未关联到道路网络节点')
+      }
+    }
+
     const addBuildingsToMap = (map, buildingsData) => {
-      const markers = map.getAllOverlays('marker');
+      const markers = map.getAllOverlays('marker')
       markers.forEach(marker => {
         if (marker.getExtData?.()?.type !== 'road-node') {
-          map.remove(marker);
+          map.remove(marker)
         }
-      });
+      })
 
       buildingsData.forEach(building => {
-        const [lng, lat] = building.gis.split(',').map(Number);
-        const isEntrance = building.type === '1';
+        const [lng, lat] = building.gis.split(',').map(Number)
+        const isEntrance = building.type === '1'
 
         const marker = new window.AMap.Marker({
           position: [lng, lat],
@@ -456,115 +770,115 @@ export default {
             direction: 'top'
           },
           extData: { type: 'building', building: building }
-        });
+        })
 
         if (isEntrance) {
           marker.setIcon(new window.AMap.Icon({
             size: new window.AMap.Size(24, 24),
             image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23FF6B6B' stroke='%23FFFFFF' stroke-width='2'/%3E%3Cpath d='M8 12h8m-4-4l4 4-4 4' stroke='%23FFFFFF' stroke-width='2'/%3E%3C/svg%3E"
-          }));
+          }))
         } else {
           marker.setIcon(new window.AMap.Icon({
             size: new window.AMap.Size(24, 24),
             image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect x='4' y='8' width='16' height='12' rx='1' fill='%23409EFF' stroke='%23FFFFFF' stroke-width='2'/%3E%3Crect x='8' y='12' width='2' height='2' fill='%23FFFFFF'/%3E%3Crect x='14' y='12' width='2' height='2' fill='%23FFFFFF'/%3E%3C/svg%3E"
-          }));
+          }))
         }
 
         marker.on('click', () => {
           if (!isEntrance) {
-            showBuildingDetail(building);
+            showBuildingDetail(building)
           } else {
-            ElMessage.info(`${building.buildName} - 校园出入口`);
+            ElMessage.info(`${building.buildName} - 校园出入口`)
           }
-        });
+        })
 
-        map.add(marker);
-      });
-    };
+        map.add(marker)
+      })
+    }
 
     const getAllSearchableData = () => {
-      const searchableData = [];
+      const searchableData = []
 
       originalBuildingsData.value.forEach(building => {
         searchableData.push({
           ...building,
           name: building.buildName,
           searchType: 'building'
-        });
-      });
+        })
+      })
 
       originalSpacesData.value.forEach(space => {
-        const relatedBuilding = originalBuildingsData.value.find(b => b.id == space.buildId);
+        const relatedBuilding = originalBuildingsData.value.find(b => b.id == space.buildId)
         searchableData.push({
           ...space,
           name: space.spaceName,
           buildingName: relatedBuilding ? relatedBuilding.buildName : '未知建筑',
           searchType: 'space'
-        });
-      });
+        })
+      })
 
-      return searchableData;
-    };
+      return searchableData
+    }
 
     const handleSearchInput = () => {
       if (!searchQuery.value.trim()) {
-        searchResults.value = [];
-        addBuildingsToMap(window.currentMap, originalBuildingsData.value);
-        return;
+        searchResults.value = []
+        addBuildingsToMap(window.currentMap, originalBuildingsData.value)
+        return
       }
 
-      const query = searchQuery.value.toLowerCase();
-      const allSearchableData = getAllSearchableData();
+      const query = searchQuery.value.toLowerCase()
+      const allSearchableData = getAllSearchableData()
 
       searchResults.value = allSearchableData.filter(item =>
         (item.name && item.name.toLowerCase().includes(query)) ||
         (item.buildNo && item.buildNo.toLowerCase().includes(query)) ||
         (item.spaceNo && item.spaceNo.toLowerCase().includes(query)) ||
         (item.about && item.about.toLowerCase().includes(query))
-      );
-    };
+      )
+    }
 
     const performSearch = () => {
       if (!searchQuery.value.trim()) {
-        addBuildingsToMap(window.currentMap, originalBuildingsData.value);
-        return;
+        addBuildingsToMap(window.currentMap, originalBuildingsData.value)
+        return
       }
 
-      const query = searchQuery.value.toLowerCase();
-      const allSearchableData = getAllSearchableData();
+      const query = searchQuery.value.toLowerCase()
+      const allSearchableData = getAllSearchableData()
 
       const filteredItems = allSearchableData.filter(item =>
         (item.name && item.name.toLowerCase().includes(query)) ||
         (item.buildNo && item.buildNo.toLowerCase().includes(query)) ||
         (item.spaceNo && item.spaceNo.toLowerCase().includes(query)) ||
         (item.about && item.about.toLowerCase().includes(query))
-      );
+      )
 
-      const filteredBuildings = filteredItems.filter(item => item.searchType === 'building');
-      addBuildingsToMap(window.currentMap, filteredBuildings);
-    };
+      const filteredBuildings = filteredItems.filter(item => item.searchType === 'building')
+      addBuildingsToMap(window.currentMap, filteredBuildings)
+    }
 
     const selectSearchResult = (result) => {
-      searchQuery.value = result.name || result.buildName;
-      searchResults.value = [];
+      searchQuery.value = result.name || result.buildName
+      searchResults.value = []
 
       if (result.searchType === 'building') {
-        const [lng, lat] = result.gis.split(',').map(Number);
-        window.currentMap.setCenter([lng, lat]);
-        window.currentMap.setZoom(18);
+        const [lng, lat] = result.gis.split(',').map(Number)
+        window.currentMap.setCenter([lng, lat])
+        window.currentMap.setZoom(18)
         if (result.type !== '1') {
-          showBuildingDetail(result);
+          showBuildingDetail(result)
         }
       } else if (result.searchType === 'space') {
-        const relatedBuilding = originalBuildingsData.value.find(b => b.id == result.buildId);
+        const relatedBuilding = originalBuildingsData.value.find(b => b.id == result.buildId)
         if (relatedBuilding) {
-          const [lng, lat] = relatedBuilding.gis.split(',').map(Number);
-          window.currentMap.setCenter([lng, lat]);
-          window.currentMap.setZoom(18);
-          showWorkspaceDetail(result);
+          const [lng, lat] = relatedBuilding.gis.split(',').map(Number)
+          window.currentMap.setCenter([lng, lat])
+          window.currentMap.setZoom(18)
+          showWorkspaceDetail(result)
         }
       }
-    };
+    }
 
     const goToActivityCenter = () => {
       router.push('/activity-center')
@@ -580,6 +894,7 @@ export default {
         startPoint.value = ''
         endPoint.value = ''
         clearPathPolylines()
+        clearStartEndMarkers()
       }
     }
 
@@ -588,27 +903,69 @@ export default {
       startPoint.value = ''
       endPoint.value = ''
       clearPathPolylines()
+      clearStartEndMarkers()
     }
 
-    // 清除所有路径线 - 改进版
+    // 清除起点终点标记
+    const clearStartEndMarkers = () => {
+      if (currentStartMarker.value) {
+        window.currentMap?.remove(currentStartMarker.value)
+        currentStartMarker.value = null
+      }
+      if (currentEndMarker.value) {
+        window.currentMap?.remove(currentEndMarker.value)
+        currentEndMarker.value = null
+      }
+    }
+
+    // 添加起点标记
+    const addStartMarker = (gis) => {
+      if (currentStartMarker.value) {
+        window.currentMap.remove(currentStartMarker.value)
+      }
+      const [lng, lat] = gis.split(',').map(Number)
+      currentStartMarker.value = new window.AMap.Marker({
+        position: [lng, lat],
+        icon: new window.AMap.Icon({
+          size: new window.AMap.Size(32, 32),
+          image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%2352C41A' stroke='%23FFFFFF' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='white' font-size='14' font-weight='bold'%3E起%3C/text%3E%3C/svg%3E"
+        }),
+        title: '起点'
+      })
+      window.currentMap.add(currentStartMarker.value)
+    }
+
+    // 添加终点标记
+    const addEndMarker = (gis) => {
+      if (currentEndMarker.value) {
+        window.currentMap.remove(currentEndMarker.value)
+      }
+      const [lng, lat] = gis.split(',').map(Number)
+      currentEndMarker.value = new window.AMap.Marker({
+        position: [lng, lat],
+        icon: new window.AMap.Icon({
+          size: new window.AMap.Size(32, 32),
+          image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23FF4444' stroke='%23FFFFFF' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='white' font-size='14' font-weight='bold'%3E终%3C/text%3E%3C/svg%3E"
+        }),
+        title: '终点'
+      })
+      window.currentMap.add(currentEndMarker.value)
+    }
+
+    // 清除所有路径线
     const clearPathPolylines = () => {
       if (window.currentMap) {
-        // 方法1：遍历所有覆盖物，通过颜色和线宽识别路径线
         const allOverlays = window.currentMap.getAllOverlays('polyline')
         const toRemove = []
         allOverlays.forEach(overlay => {
-          // 检查是否是路径规划线（红色，线宽6）
-          if (overlay.getStrokeColor && overlay.getStrokeColor() === '#FF0000' && 
-              overlay.getStrokeWeight && overlay.getStrokeWeight() === 6) {
+          if (overlay.getExtData && overlay.getExtData()?.type === 'path-route') {
             toRemove.push(overlay)
           }
         })
-        // 删除识别出的路径线
         toRemove.forEach(overlay => {
           window.currentMap.remove(overlay)
         })
-        
-        // 方法2：清空数组中存储的路径线
+
         currentPathPolylines.value.forEach(polyline => {
           try {
             if (polyline && window.currentMap.contains(polyline)) {
@@ -619,8 +976,29 @@ export default {
           }
         })
       }
-      // 清空数组
       currentPathPolylines.value = []
+    }
+
+    // 获取节点坐标
+    const getNodeGis = (nodeNo) => {
+      const node = allNodes.value.find(n => n.nodeNo === nodeNo)
+      return node?.gis || null
+    }
+
+    // 获取节点名称
+    const getNodeName = (nodeNo) => {
+      const node = allNodes.value.find(n => n.nodeNo === nodeNo)
+      return node?.nodeName || nodeNo
+    }
+
+    // 选择路径
+    const selectPath = (idx) => {
+      activePathIndex.value = String(idx)
+      const path = pathPlanData.value?.paths?.[idx]
+      if (path) {
+        currentSelectedPath.value = path
+        drawPathOnMap(path)
+      }
     }
 
     const getPathPlan = async () => {
@@ -629,12 +1007,19 @@ export default {
         return
       }
 
-      // 规划新路径前清除旧路径
       clearPathPolylines()
+      pathPlanning.value = true
+      planError.value = false
+      pathPlanData.value = null
+      currentSelectedPath.value = null
 
       try {
-        ElMessage.info('正在规划路径...')
-        
+        console.log('开始路径规划:', {
+          beginNo: startPoint.value,
+          endNo: endPoint.value,
+          howType: transportType.value
+        })
+
         const response = await request({
           url: '/pathplan',
           method: 'get',
@@ -645,75 +1030,228 @@ export default {
           }
         })
 
-        if (response.code === "200" && response.data && response.data.success) {
-          pathPlanData.value = response.data
-          pathPlanDialogVisible.value = true
+        console.log('路径规划响应:', response)
+
+        if (response.code === "200" && response.data) {
+          let planData = response.data
+
+          if (!planData.paths || !Array.isArray(planData.paths) || planData.paths.length === 0) {
+            if (planData.pathNodes && planData.pathNodes.length > 0) {
+              planData.paths = [{
+                pathIndex: 1,
+                description: `${getNodeName(startPoint.value)} 到 ${getNodeName(endPoint.value)}`,
+                totalDistance: planData.totalDistance || 0,
+                pathNodes: planData.pathNodes,
+                pathEdges: planData.pathEdges || []
+              }]
+            } else {
+              ElMessage.error('未找到可行路径')
+              planError.value = true
+              return
+            }
+          }
+
+          pathPlanData.value = planData
           activePathIndex.value = '0'
-          ElMessage.success(response.data.message || '路径规划成功')
+          ElMessage.success(planData.message || `找到 ${planData.paths.length} 条路径`)
+
+          const startGis = getNodeGis(startPoint.value)
+          const endGis = getNodeGis(endPoint.value)
+          if (startGis) addStartMarker(startGis)
+          if (endGis) addEndMarker(endGis)
+
+          if (planData.paths && planData.paths.length > 0) {
+            currentSelectedPath.value = planData.paths[0]
+            setTimeout(() => {
+              drawPathOnMap(planData.paths[0])
+            }, 200)
+          }
         } else {
-          ElMessage.error(response.data?.message || '路径规划失败')
+          ElMessage.error(response.data?.message || response.msg || '路径规划失败')
+          planError.value = true
         }
       } catch (error) {
         console.error('路径规划请求失败:', error)
-        ElMessage.error('路径规划请求失败')
+        ElMessage.error('路径规划请求失败: ' + (error.message || '网络错误'))
+        planError.value = true
+      } finally {
+        pathPlanning.value = false
       }
     }
 
     // 绘制路径到地图
     const drawPathOnMap = (path) => {
-      // 重要：绘制前先清除所有已有的路径线
-      clearPathPolylines()
+      console.log('开始绘制路径:', path)
+
+      if (!path) {
+        ElMessage.warning('路径数据为空')
+        return
+      }
 
       if (!path.pathNodes || path.pathNodes.length < 2) {
+        console.warn('路径节点不足:', path.pathNodes)
         ElMessage.warning('路径节点不足，无法绘制')
         return
       }
 
+      if (window.currentMap) {
+        const allOverlays = window.currentMap.getAllOverlays('polyline')
+        const toRemove = []
+        allOverlays.forEach(overlay => {
+          if (overlay.getExtData && overlay.getExtData()?.type === 'path-route') {
+            toRemove.push(overlay)
+          }
+        })
+        toRemove.forEach(overlay => {
+          window.currentMap.remove(overlay)
+        })
+      }
+
+      const uniqueNodes = getUniqueNodes(path.pathNodes)
       const pathPoints = []
-      path.pathNodes.forEach(node => {
+      uniqueNodes.forEach((node, idx) => {
         if (node.gis) {
-          const [lng, lat] = node.gis.split(',').map(Number)
-          pathPoints.push([lng, lat])
+          const coords = node.gis.split(',')
+          if (coords.length === 2) {
+            const lng = parseFloat(coords[0])
+            const lat = parseFloat(coords[1])
+            if (!isNaN(lng) && !isNaN(lat)) {
+              pathPoints.push([lng, lat])
+            }
+          }
         }
       })
 
       if (pathPoints.length < 2) {
-        ElMessage.warning('无法获取节点坐标')
+        ElMessage.warning('无法获取有效的节点坐标')
         return
       }
 
-      const routePolyline = new window.AMap.Polyline({
-        path: pathPoints,
-        strokeColor: '#FF0000',
-        strokeWeight: 6,
-        strokeOpacity: 0.8,
-        strokeStyle: 'solid',
-        lineJoin: 'round',
-        lineCap: 'round'
-      })
+      // 统一使用红色绘制所有路径
+      const routeColor = '#FF0000'
 
-      window.currentMap.add(routePolyline)
-      currentPathPolylines.value.push(routePolyline)
+      try {
+        const routePolyline = new window.AMap.Polyline({
+          path: pathPoints,
+          strokeColor: routeColor,
+          strokeWeight: 6,
+          strokeOpacity: 0.9,
+          strokeStyle: 'solid',
+          lineJoin: 'round',
+          lineCap: 'round',
+          extData: { type: 'path-route', pathIndex: path.pathIndex }
+        })
 
-      // 调整地图视野以显示整条路径
-      window.currentMap.setFitView([routePolyline])
+        window.currentMap.add(routePolyline)
+        currentPathPolylines.value.push(routePolyline)
+        window.currentMap.setFitView([routePolyline], false, [100, 100, 100, 100])
 
-      ElMessage.success(`已显示${path.description}`)
-    }
-
-    // 切换Tab时自动刷新地图上的路径
-    const handleTabClick = (tab) => {
-      // 获取当前选中的路径
-      const currentPath = pathPlanData.value?.paths?.[parseInt(tab.index)]
-      if (currentPath) {
-        // 自动绘制当前选中的路径
-        drawPathOnMap(currentPath)
+        console.log('路径绘制成功，共', pathPoints.length, '个点')
+      } catch (error) {
+        console.error('绘制路径时出错:', error)
+        ElMessage.error('绘制路径失败')
       }
     }
 
-    const closePathPlanDialog = () => {
-      pathPlanDialogVisible.value = false
-      clearPathPolylines()
+    // 在地图上显示节点
+    const showNodesOnMap = (path) => {
+      if (!path.pathNodes) return
+
+      const uniqueNodes = getUniqueNodes(path.pathNodes)
+      uniqueNodes.forEach(node => {
+        if (node.gis) {
+          const [lng, lat] = node.gis.split(',').map(Number)
+          if (!isNaN(lng) && !isNaN(lat)) {
+            const tempMarker = new window.AMap.Marker({
+              position: [lng, lat],
+              icon: new window.AMap.Icon({
+                size: new window.AMap.Size(20, 20),
+                image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%23FF9800' stroke='%23FFFFFF' stroke-width='2'/%3E%3C/svg%3E"
+              }),
+              title: node.nodeName
+            })
+            window.currentMap.add(tempMarker)
+            setTimeout(() => window.currentMap.remove(tempMarker), 3000)
+          }
+        }
+      })
+    }
+
+    // 飞向节点
+    const flyToNode = (node) => {
+      if (node.gis) {
+        const [lng, lat] = node.gis.split(',').map(Number)
+        if (!isNaN(lng) && !isNaN(lat)) {
+          window.currentMap.setCenter([lng, lat])
+          window.currentMap.setZoom(18)
+        }
+      }
+    }
+
+    // 模拟导航
+    const simulateNavigation = (path) => {
+      const uniqueNodes = getUniqueNodes(path.pathNodes)
+      if (!uniqueNodes || uniqueNodes.length < 2) {
+        ElMessage.warning('路径节点不足，无法模拟导航')
+        return
+      }
+
+      stopSimulation()
+      simulateNodes.value = uniqueNodes
+      currentNodeIndex.value = 0
+      isSimulating.value = true
+
+      if (simulateNodes.value[0] && simulateNodes.value[0].gis) {
+        const [lng, lat] = simulateNodes.value[0].gis.split(',').map(Number)
+        if (!isNaN(lng) && !isNaN(lat)) {
+          currentMarker = new window.AMap.Marker({
+            position: [lng, lat],
+            icon: new window.AMap.Icon({
+              size: new window.AMap.Size(24, 24),
+              image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%2333CCFF' stroke='%23FFFFFF' stroke-width='2'/%3E%3Cpath d='M8 12h8m-4-4l4 4-4 4' stroke='%23FFFFFF' stroke-width='2'/%3E%3C/svg%3E"
+            }),
+            title: '当前位置'
+          })
+          window.currentMap.add(currentMarker)
+
+          ElMessage.info(`开始模拟导航，共${simulateNodes.value.length}个节点`)
+
+          simulationInterval = setInterval(() => {
+            if (currentNodeIndex.value < simulateNodes.value.length - 1) {
+              currentNodeIndex.value++
+              const node = simulateNodes.value[currentNodeIndex.value]
+              if (node && node.gis) {
+                const [lng, lat] = node.gis.split(',').map(Number)
+                if (!isNaN(lng) && !isNaN(lat)) {
+                  currentMarker.setPosition([lng, lat])
+                  window.currentMap.setCenter([lng, lat])
+
+                  if (currentNodeIndex.value === simulateNodes.value.length - 1) {
+                    ElMessage.success('到达目的地！')
+                    stopSimulation()
+                  }
+                }
+              }
+            } else {
+              stopSimulation()
+            }
+          }, 2000)
+        }
+      }
+    }
+
+    const stopSimulation = () => {
+      if (simulationInterval) {
+        clearInterval(simulationInterval)
+        simulationInterval = null
+      }
+      if (currentMarker) {
+        window.currentMap?.remove(currentMarker)
+        currentMarker = null
+      }
+      isSimulating.value = false
+      simulateNodes.value = []
+      currentNodeIndex.value = 0
     }
 
     const fetchAllNodes = async () => {
@@ -730,6 +1268,8 @@ export default {
             nodeName: node.nodeName,
             gis: node.gis
           }))
+          filteredNodes.value = navigationOptions.value.slice(0, 30)
+          console.log('加载节点成功，共', allNodes.value.length, '个节点')
         }
       } catch (error) {
         console.error('获取节点数据失败:', error)
@@ -741,146 +1281,152 @@ export default {
         const response = await request({
           url: '/build/getAbleBuilds',
           method: 'get'
-        });
+        })
 
         if (response.code === "200") {
-          return response.data;
+          return response.data
         } else {
-          console.error('获取建筑物数据失败:', response.msg || response.message);
-          return [];
+          console.error('获取建筑物数据失败:', response.msg || response.message)
+          return []
         }
       } catch (error) {
-        console.error('请求建筑物数据时发生错误:', error);
-        return [];
+        console.error('请求建筑物数据时发生错误:', error)
+        return []
       }
-    };
+    }
 
     const fetchSpacesFromServer = async () => {
       try {
         const response = await request({
           url: '/workspace/getAllSpace',
           method: 'get'
-        });
+        })
 
         if (response.code === "200") {
-          return response.data;
+          return response.data
         } else {
-          console.error('获取工作场地数据失败:', response.msg || response.message);
-          return [];
+          console.error('获取工作场地数据失败:', response.msg || response.message)
+          return []
         }
       } catch (error) {
-        console.error('请求工作场地数据时发生错误:', error);
-        return [];
+        console.error('请求工作场地数据时发生错误:', error)
+        return []
       }
-    };
+    }
 
     const fetchRoadsFromServer = async () => {
       try {
         const response = await request({
           url: '/road/getAllRoad',
           method: 'get'
-        });
+        })
 
         if (response.code === "200") {
-          return response.data || [];
+          return response.data || []
         } else {
-          console.error('获取道路数据失败:', response.msg || response.message);
-          return [];
+          console.error('获取道路数据失败:', response.msg || response.message)
+          return []
         }
       } catch (error) {
-        console.error('请求道路数据时发生错误:', error);
-        return [];
+        console.error('请求道路数据时发生错误:', error)
+        return []
       }
-    };
+    }
 
     const fetchNodesFromServer = async () => {
       try {
         const response = await request({
           url: '/road/getAllEdge',
           method: 'get'
-        });
+        })
 
         if (response.code === "200") {
-          return response.data || [];
+          return response.data || []
         } else {
-          console.error('获取节点数据失败:', response.msg || response.message);
-          return [];
+          console.error('获取节点数据失败:', response.msg || response.message)
+          return []
         }
       } catch (error) {
-        console.error('请求节点数据时发生错误:', error);
-        return [];
+        console.error('请求节点数据时发生错误:', error)
+        return []
       }
-    };
+    }
 
     const getRoadColorByType = (type) => {
       switch (type) {
         case 0: return '#FFFFFF'
-        case 1: return '#87CEEB'
-        case 2: return '#FF0000'
+        case 1: return '#3399FF'
+        case 2: return '#FFD700'
         default: return '#CCCCCC'
       }
-    };
+    }
 
     const drawRealRoads = async (map) => {
       try {
-        // 清除现有的道路（保留路径规划线会被单独清除）
-        const polylines = map.getAllOverlays('polyline');
+        const polylines = map.getAllOverlays('polyline')
         polylines.forEach(polyline => {
           if (polyline.getExtData && polyline.getExtData()?.type === 'real-road') {
-            map.remove(polyline);
+            map.remove(polyline)
           }
-        });
+        })
 
         const [roads, nodes] = await Promise.all([
           fetchRoadsFromServer(),
           fetchNodesFromServer()
-        ]);
+        ])
 
-        console.log('获取到的道路数据:', roads);
-        console.log('获取到的节点数据:', nodes);
+        console.log('获取到的道路数量:', roads.length)
+        console.log('获取到的节点数量:', nodes.length)
 
         roads.forEach(road => {
-          const beginNode = nodes.find(n => n.nodeNo === road.beginNode);
-          const endNode = nodes.find(n => n.nodeNo === road.endNode);
+          const beginNode = nodes.find(n => n.nodeNo === road.beginNode)
+          const endNode = nodes.find(n => n.nodeNo === road.endNode)
 
           if (beginNode && endNode && beginNode.gis && endNode.gis) {
-            const [beginLng, beginLat] = beginNode.gis.split(',').map(Number);
-            const [endLng, endLat] = endNode.gis.split(',').map(Number);
+            const [beginLng, beginLat] = beginNode.gis.split(',').map(Number)
+            const [endLng, endLat] = endNode.gis.split(',').map(Number)
 
-            const roadColor = getRoadColorByType(road.roadType);
+            if (!isNaN(beginLng) && !isNaN(beginLat) && !isNaN(endLng) && !isNaN(endLat)) {
+              const roadColor = getRoadColorByType(road.roadType)
+              const weight = road.roadType === 0 ? 4 : (road.roadType === 1 ? 3 : 2)
 
-            const roadPolyline = new window.AMap.Polyline({
-              path: [[beginLng, beginLat], [endLng, endLat]],
-              strokeColor: roadColor,
-              strokeWeight: 2,
-              strokeOpacity: 0.6,
-              strokeStyle: "solid",
-              extData: { type: 'real-road', roadInfo: road }
-            });
+              const roadPolyline = new window.AMap.Polyline({
+                path: [[beginLng, beginLat], [endLng, endLat]],
+                strokeColor: roadColor,
+                strokeWeight: weight,
+                strokeOpacity: 0.85,
+                strokeStyle: "solid",
+                extData: { type: 'real-road', roadInfo: road }
+              })
 
-            map.add(roadPolyline);
+              map.add(roadPolyline)
+            }
           }
-        });
+        })
 
         nodes.forEach(node => {
           if (node.gis) {
-            const [lng, lat] = node.gis.split(',').map(Number);
-            const nodeMarker = new window.AMap.Marker({
-              position: [lng, lat],
-              title: `${node.nodeName}`,
-              icon: new window.AMap.Icon({
-                size: new window.AMap.Size(8, 8),
-                image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='4' cy='4' r='3' fill='%23666' /%3E%3C/svg%3E"
-              }),
-              extData: { type: 'road-node', nodeInfo: node }
-            });
-            map.add(nodeMarker);
+            const [lng, lat] = node.gis.split(',').map(Number)
+            if (!isNaN(lng) && !isNaN(lat)) {
+              const nodeMarker = new window.AMap.Marker({
+                position: [lng, lat],
+                title: node.nodeName,
+                icon: new window.AMap.Icon({
+                  size: new window.AMap.Size(6, 6),
+                  image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='3' cy='3' r='2.5' fill='%23999' /%3E%3C/svg%3E"
+                }),
+                extData: { type: 'road-node', nodeInfo: node }
+              })
+              map.add(nodeMarker)
+            }
           }
-        });
+        })
+
+        console.log('道路绘制完成')
       } catch (error) {
-        console.error('绘制道路失败:', error);
+        console.error('绘制道路失败:', error)
       }
-    };
+    }
 
     const loadAMapAPI = () => {
       return new Promise((resolve, reject) => {
@@ -911,37 +1457,41 @@ export default {
 
       loadAMapAPI().then(async () => {
         if (typeof window.AMap === 'undefined') {
-          console.error('高德地图API未加载');
-          return;
+          console.error('高德地图API未加载')
+          return
         }
 
         const map = new window.AMap.Map(mapContainer.value, {
           center: [113.823275, 34.799331],
           layers: [new window.AMap.TileLayer.Satellite()],
           zoom: 17
-        });
+        })
 
-        window.currentMap = map;
+        window.currentMap = map
 
         const [buildingsData, spacesData] = await Promise.all([
           fetchBuildingsFromServer(),
           fetchSpacesFromServer()
-        ]);
+        ])
 
-        originalBuildingsData.value = [...buildingsData];
-        originalSpacesData.value = [...spacesData];
+        originalBuildingsData.value = [...buildingsData]
+        originalSpacesData.value = [...spacesData]
 
-        addBuildingsToMap(map, buildingsData);
-        await drawRealRoads(map);
+        addBuildingsToMap(map, buildingsData)
+        await drawRealRoads(map)
 
-        map.setFitView();
+        map.setFitView()
+
+        console.log('地图初始化完成')
       }).catch(err => {
         console.error('地图加载失败:', err)
+        ElMessage.error('地图加载失败，请刷新页面重试')
       })
     })
 
     onUnmounted(() => {
       window.removeEventListener('storage', storageHandler)
+      stopSimulation()
     })
 
     return {
@@ -957,6 +1507,7 @@ export default {
       selectSearchResult,
       goToActivityCenter,
       goToCampusRecommend,
+      goToKnowledgeGraph,
       getResultIcon,
       getResultType,
       buildingDialogVisible,
@@ -972,14 +1523,43 @@ export default {
       endPoint,
       transportType,
       navigationOptions,
+      filteredNodes,
+      nodeSearchLoading,
+      searchNodes,
       cancelNavigation,
       getPathPlan,
       pathPlanDialogVisible,
       pathPlanData,
       activePathIndex,
       drawPathOnMap,
-      handleTabClick,
-      closePathPlanDialog
+      showNodesOnMap,
+      flyToNode,
+      simulateNavigation,
+      isSimulating,
+      simulateNodes,
+      currentNodeIndex,
+      stopSimulation,
+      pathPlanning,
+      planError,
+      isPanelCollapsed,
+      togglePanel,
+      swapStartEnd,
+      clearAllPaths,
+      clearPath,
+      selectPath,
+      getPathTagType,
+      getPathTagText,
+      showFullPathDetail,
+      drawDetailPathOnMap,
+      currentSelectedPath,
+      detailPath,
+      pathDetailDialogVisible,
+      formatDistance,
+      getUniqueNodes,
+      getUniqueNodeCount,
+      hasPaths,
+      currentPathPolylines,
+      showSimulateBtn: computed(() => true)
     }
   }
 }
@@ -1053,6 +1633,313 @@ export default {
   margin-left: 8px;
 }
 
+/* 左下角路径规划面板 */
+.bottom-left-navigation-panel {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  z-index: 1000;
+  width: 380px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.bottom-left-navigation-panel.collapsed {
+  width: 130px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #409EFF, #66b1ff);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.panel-header:hover {
+  background: linear-gradient(135deg, #66b1ff, #409EFF);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.collapse-icon {
+  font-size: 16px;
+  transition: transform 0.3s;
+}
+
+.panel-content {
+  padding: 12px;
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+.nav-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.input-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 45px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.input-label i {
+  font-size: 14px;
+}
+
+.nav-inputs .el-select {
+  flex: 1;
+}
+
+.swap-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #409EFF;
+  cursor: pointer;
+  padding: 2px 6px;
+  background: #ecf5ff;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.swap-btn:hover {
+  background: #d9ecff;
+}
+
+.transport-options {
+  margin: 10px 0;
+  padding: 8px 0;
+  border-top: 1px solid #e4e7ed;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.transport-label {
+  font-weight: bold;
+  color: #606266;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.transport-options .el-radio {
+  margin-right: 12px;
+  margin-bottom: 3px;
+}
+
+.nav-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 10px 0;
+}
+
+/* 路径结果列表 */
+.path-results {
+  margin-top: 10px;
+  border-top: 1px solid #e4e7ed;
+  padding-top: 10px;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #303133;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.path-result-item {
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.path-result-item:hover {
+  background: #ecf5ff;
+}
+
+.path-result-item.active {
+  background: #ecf5ff;
+  border-color: #409EFF;
+}
+
+.path-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-index {
+  width: 24px;
+  height: 24px;
+  background: #909399;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.path-result-item.active .path-index {
+  background: #409EFF;
+}
+
+.path-info {
+  flex: 1;
+}
+
+.path-desc {
+  font-size: 12px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 2px;
+}
+
+.path-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: #909399;
+}
+
+.path-meta i {
+  margin-right: 2px;
+}
+
+.path-detail-preview {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.preview-nodes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+
+.preview-node {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.preview-node-name {
+  color: #606266;
+  max-width: 55px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-more {
+  color: #909399;
+  font-size: 10px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-actions .el-button--text {
+  font-size: 10px;
+  padding: 0;
+}
+
+/* 当前路径信息 */
+.current-path-info {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.info-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: #303133;
+  margin-bottom: 6px;
+}
+
+.info-content {
+  display: flex;
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.info-item .label {
+  color: #909399;
+}
+
+.info-item .value {
+  color: #409EFF;
+  font-weight: 500;
+}
+
+.loading-state,
+.error-state {
+  margin-top: 10px;
+}
+
+.loading-text {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #909399;
+  text-align: center;
+}
+
+/* 右侧功能按钮组 */
 .right-function-area {
   position: absolute;
   top: 20px;
@@ -1111,163 +1998,9 @@ export default {
   font-size: 16px;
 }
 
-.navigation-panel {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  width: 360px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 20px;
-}
-
-.nav-controls h3 {
-  margin: 0 0 15px 0;
-  color: #303133;
-  font-size: 18px;
-}
-
-.nav-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-.transport-options {
-  margin: 15px 0;
-}
-
-.nav-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  margin-top: 15px;
-}
-
-.path-plan-dialog :deep(.el-dialog__header) {
-  background-color: #409EFF;
-  color: white;
-  border-radius: 4px 4px 0 0;
-  padding: 15px 20px;
-}
-
-.path-plan-dialog :deep(.el-dialog__title) {
-  color: white;
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.path-detail {
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.path-summary {
-  margin-bottom: 15px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e4e7ed;
-}
-
-.path-section {
-  margin-bottom: 20px;
-}
-
-.path-section h4 {
-  margin: 0 0 10px 0;
-  color: #303133;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-.path-nodes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-}
-
-.path-node-item {
-  display: flex;
-  align-items: center;
-  background: #f5f7fa;
-  border-radius: 20px;
-  padding: 5px 10px;
-  margin: 2px;
-}
-
-.node-marker {
-  width: 22px;
-  height: 22px;
-  background: #409EFF;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: bold;
-  margin-right: 8px;
-}
-
-.node-info {
-  font-size: 13px;
-}
-
-.node-name {
-  font-weight: 500;
-  color: #303133;
-}
-
-.node-no {
-  font-size: 11px;
-  color: #909399;
-}
-
-.arrow-icon {
-  color: #c0c4cc;
-  margin: 0 5px;
-}
-
-.path-edges {
-  background: #f5f7fa;
-  border-radius: 8px;
-  padding: 10px;
-}
-
-.path-edge-item {
-  padding: 8px 0;
-  border-bottom: 1px solid #e4e7ed;
-}
-
-.path-edge-item:last-child {
-  border-bottom: none;
-}
-
-.edge-name {
-  font-weight: 500;
-  color: #303133;
-  margin-bottom: 5px;
-}
-
-.edge-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #606266;
-}
-
-.path-actions {
-  margin-top: 15px;
-  text-align: center;
-}
-
+/* 对话框样式 */
 .building-dialog :deep(.el-dialog__header) {
-  background-color: #409EFF;
+  background: linear-gradient(135deg, #409EFF, #66b1ff);
   color: white;
   border-radius: 4px 4px 0 0;
   padding: 15px 20px;
@@ -1385,14 +2118,17 @@ export default {
   text-align: center;
 }
 
-.dialog-footer {
+.building-actions {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #e4e7ed;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 10px;
 }
 
 .workspace-dialog :deep(.el-dialog__header) {
-  background-color: #67C23A;
+  background: linear-gradient(135deg, #67C23A, #85ce61);
   color: white;
   border-radius: 4px 4px 0 0;
   padding: 15px 20px;
@@ -1402,5 +2138,168 @@ export default {
   color: white;
   font-size: 18px;
   font-weight: bold;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* 路径详情弹窗 */
+.path-detail-dialog :deep(.el-dialog__header) {
+  background: linear-gradient(135deg, #409EFF, #66b1ff);
+  color: white;
+}
+
+.path-detail-dialog :deep(.el-dialog__title) {
+  color: white;
+}
+
+.detail-overview {
+  display: flex;
+  gap: 20px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.detail-overview .overview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-overview .label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.detail-overview .value {
+  font-size: 14px;
+  font-weight: bold;
+  color: #303133;
+}
+
+.detail-section {
+  margin-bottom: 20px;
+}
+
+.detail-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #303133;
+}
+
+.node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.node-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f5f7fa;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.node-order {
+  width: 20px;
+  height: 20px;
+  background: #409EFF;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+.road-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.road-list .road-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.road-list .road-name {
+  font-weight: 500;
+}
+
+.road-info {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* 模拟导航栏 */
+.simulation-bar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: linear-gradient(135deg, #333, #222);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+}
+
+.simulation-info {
+  display: flex;
+  gap: 12px;
+}
+
+.simulation-controls {
+  margin-left: 8px;
+}
+
+/* 滚动条样式 */
+.panel-content::-webkit-scrollbar,
+.results-list::-webkit-scrollbar,
+.node-list::-webkit-scrollbar,
+.road-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.panel-content::-webkit-scrollbar-track,
+.results-list::-webkit-scrollbar-track,
+.node-list::-webkit-scrollbar-track,
+.road-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.panel-content::-webkit-scrollbar-thumb,
+.results-list::-webkit-scrollbar-thumb,
+.node-list::-webkit-scrollbar-thumb,
+.road-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover,
+.results-list::-webkit-scrollbar-thumb:hover,
+.node-list::-webkit-scrollbar-thumb:hover,
+.road-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>
